@@ -15,16 +15,19 @@ import java.util.*;
  * Generates side-by-side comparisons from multiple extracted quotes.
  * This is the core product feature users see in the demo.
  *
- * Also calls Claude to generate a plain-English summary and recommendation.
+ * Also calls Gemini to generate a plain-English summary and recommendation.
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class ComparisonService {
 
-    private final WebClient claudeWebClient;
+    // private final WebClient claudeWebClient;  // Commented out — using Gemini
+    private final WebClient geminiWebClient;
 
-    @Value("${app.claude.model}")
+    // @Value("${app.claude.model}")
+    // private String model;
+    @Value("${app.gemini.model}")
     private String model;
 
     // ── Build a comparison matrix ──────────────────────────────
@@ -39,20 +42,27 @@ public class ComparisonService {
         return new ComparisonMatrix(quotes, matchedGroups, summary);
     }
 
-    // ── Claude AI summary ──────────────────────────────────────
+    // ── Gemini AI summary ──────────────────────────────────────
 
     public Mono<AiComparisonSummary> generateAiSummary(ComparisonMatrix matrix) {
         String matrixText = formatMatrixForPrompt(matrix);
+        String prompt = SUMMARY_SYSTEM_PROMPT + "\n\n" + matrixText;
 
         Map<String, Object> requestBody = Map.of(
-            "model", model,
-            "max_tokens", 1000,
-            "system", SUMMARY_SYSTEM_PROMPT,
-            "messages", List.of(Map.of("role", "user", "content", matrixText))
+            "contents", List.of(
+                Map.of("parts", List.of(
+                    Map.of("text", prompt)
+                ))
+            ),
+            "generationConfig", Map.of(
+                "temperature", 0.1,
+                "maxOutputTokens", 1000,
+                "responseMimeType", "application/json"
+            )
         );
 
-        return claudeWebClient.post()
-            .uri("/messages")
+        return geminiWebClient.post()
+            .uri("/v1beta/models/{model}:generateContent", model)
             .bodyValue(requestBody)
             .retrieve()
             .bodyToMono(String.class)
@@ -148,7 +158,7 @@ public class ComparisonService {
         );
     }
 
-    // ── Format for Claude prompt ───────────────────────────────
+    // ── Format for Gemini prompt ───────────────────────────────
 
     private String formatMatrixForPrompt(ComparisonMatrix matrix) {
         StringBuilder sb = new StringBuilder();
@@ -170,9 +180,18 @@ public class ComparisonService {
     }
 
     private AiComparisonSummary parseAiSummaryResponse(String raw) {
-        // Parse the Claude response - simplified for MVP
-        // In production: use structured output with schema
-        return new AiComparisonSummary(raw, null);
+        // Parse the Gemini response — extract text from candidates[0].content.parts[0].text
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var root = mapper.readTree(raw);
+            String text = root.path("candidates").get(0)
+                .path("content").path("parts").get(0)
+                .path("text").asText();
+            return new AiComparisonSummary(text, null);
+        } catch (Exception e) {
+            log.warn("Failed to parse Gemini summary response, returning raw: {}", e.getMessage());
+            return new AiComparisonSummary(raw, null);
+        }
     }
 
     private static final String SUMMARY_SYSTEM_PROMPT = """

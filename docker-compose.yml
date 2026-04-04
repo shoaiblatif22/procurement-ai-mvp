@@ -52,9 +52,12 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-procpass}
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: 6379
-      # Claude API — set in .env
-      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
-      CLAUDE_MODEL: claude-sonnet-4-6
+      # Claude API — commented out, using Gemini instead
+      # CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      # CLAUDE_MODEL: claude-sonnet-4-6
+      # Gemini API
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash-lite}
       # AWS — set in .env (or use LocalStack below for local dev)
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}

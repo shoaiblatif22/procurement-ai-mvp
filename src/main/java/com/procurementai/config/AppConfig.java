@@ -13,6 +13,10 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.textract.TextractClient;
 
 import java.net.URI;
+import java.util.Map;
+
+import org.springframework.web.reactive.function.client.ClientRequest;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * Infrastructure configuration.
@@ -21,19 +25,40 @@ import java.net.URI;
 @Configuration
 public class AppConfig {
 
-    // ── Claude API WebClient ───────────────────────────────────
+    // ── Claude API WebClient (commented out — using Gemini instead) ──
+    //
+    // @Bean
+    // public WebClient claudeWebClient(
+    //         @Value("${app.claude.api-key}") String apiKey,
+    //         @Value("${app.claude.base-url}") String baseUrl) {
+    //
+    //     return WebClient.builder()
+    //         .baseUrl(baseUrl)
+    //         .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+    //         .defaultHeader("x-api-key", apiKey)
+    //         .defaultHeader("anthropic-version", "2023-06-01")
+    //         .codecs(config -> config.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+    //         .build();
+    // }
+
+    // ── Gemini API WebClient ──────────────────────────────────
 
     @Bean
-    public WebClient claudeWebClient(
-            @Value("${app.claude.api-key}") String apiKey,
-            @Value("${app.claude.base-url}") String baseUrl) {
-
+    public WebClient geminiWebClient(@Value("${app.gemini.api-key}") String apiKey) {
         return WebClient.builder()
-            .baseUrl(baseUrl)
+            .baseUrl("https://generativelanguage.googleapis.com")
             .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-            .defaultHeader("x-api-key", apiKey)
-            .defaultHeader("anthropic-version", "2023-06-01")
+            .defaultUriVariables(Map.of("key", apiKey))
             .codecs(config -> config.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+            .filter((request, next) -> {
+                // Append API key as query parameter to every request
+                var uri = UriComponentsBuilder
+                    .fromUri(request.url())
+                    .queryParam("key", apiKey)
+                    .build().toUri();
+                return next.exchange(ClientRequest
+                    .from(request).url(uri).build());
+            })
             .build();
     }
 

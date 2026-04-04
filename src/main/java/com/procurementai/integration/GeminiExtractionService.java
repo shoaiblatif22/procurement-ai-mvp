@@ -15,25 +15,19 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Calls the Claude API to extract structured data from raw OCR text.
- *
- * This is the core differentiator of the product. Claude reads the messy,
- * inconsistently-formatted text from supplier quotes and returns clean JSON
- * that maps to our QuoteExtractionResult schema.
+ * Calls the Google Gemini API to extract structured data from raw OCR text.
+ * Drop-in replacement for ClaudeExtractionService — same input/output contract.
  */
-// @Service  // Commented out — using GeminiExtractionService instead
+@Service
 @Slf4j
 @RequiredArgsConstructor
-public class ClaudeExtractionService {
+public class GeminiExtractionService {
 
-    private final WebClient claudeWebClient;
+    private final WebClient geminiWebClient;
     private final ObjectMapper objectMapper;
 
-    @Value("${app.claude.model}")
+    @Value("${app.gemini.model}")
     private String model;
-
-    @Value("${app.claude.max-tokens}")
-    private int maxTokens;
 
     @Value("${app.extraction.confidence-threshold}")
     private BigDecimal confidenceThreshold;
@@ -41,33 +35,37 @@ public class ClaudeExtractionService {
     // ── Main extraction method ─────────────────────────────────
 
     public Mono<QuoteExtractionResult> extractQuoteData(String ocrText, String originalFilename) {
-        String prompt = buildExtractionPrompt(ocrText, originalFilename);
+        String prompt = SYSTEM_PROMPT + "\n\n" + buildExtractionPrompt(ocrText, originalFilename);
 
         Map<String, Object> requestBody = Map.of(
-            "model", model,
-            "max_tokens", maxTokens,
-            "system", SYSTEM_PROMPT,
-            "messages", List.of(
-                Map.of("role", "user", "content", prompt)
+            "contents", List.of(
+                Map.of("parts", List.of(
+                    Map.of("text", prompt)
+                ))
+            ),
+            "generationConfig", Map.of(
+                "temperature", 0.1,
+                "maxOutputTokens", 4096,
+                "responseMimeType", "application/json"
             )
         );
 
-        log.debug("Sending extraction request to Claude for document: {}", originalFilename);
+        log.debug("Sending extraction request to Gemini for document: {}", originalFilename);
 
-        return claudeWebClient.post()
-            .uri("/messages")
+        return geminiWebClient.post()
+            .uri("/v1beta/models/{model}:generateContent", model)
             .bodyValue(requestBody)
             .retrieve()
             .onStatus(status -> status.isError(), response ->
                 response.bodyToMono(String.class)
                     .flatMap(body -> {
-                        log.error("Claude API error {} for {}: {}", response.statusCode(), originalFilename, body);
-                        return Mono.error(new RuntimeException("Claude API " + response.statusCode() + ": " + body));
+                        log.error("Gemini API error {} for {}: {}", response.statusCode(), originalFilename, body);
+                        return Mono.error(new RuntimeException("Gemini API " + response.statusCode() + ": " + body));
                     })
             )
             .bodyToMono(String.class)
             .timeout(Duration.ofSeconds(60))
-            .map(this::parseClaudeResponse)
+            .map(this::parseGeminiResponse)
             .doOnSuccess(result -> log.info(
                 "Extraction complete for {}. Confidence: {}, Items: {}, Requires review: {}",
                 originalFilename,
@@ -75,24 +73,26 @@ public class ClaudeExtractionService {
                 result.lineItems().size(),
                 result.requiresReview()
             ))
-            .doOnError(e -> log.error("Claude extraction failed for {}: {}", originalFilename, e.getMessage()));
+            .doOnError(e -> log.error("Gemini extraction failed for {}: {}", originalFilename, e.getMessage()));
     }
 
     // ── Response parsing ───────────────────────────────────────
 
-    private QuoteExtractionResult parseClaudeResponse(String rawResponse) {
+    private QuoteExtractionResult parseGeminiResponse(String rawResponse) {
         try {
             JsonNode root = objectMapper.readTree(rawResponse);
-            String content = root.path("content").get(0).path("text").asText();
+            String content = root.path("candidates").get(0)
+                .path("content").path("parts").get(0)
+                .path("text").asText();
 
-            // Strip any markdown code fences Claude might add
+            // Strip any markdown code fences Gemini might add
             content = content.replaceAll("```json\\n?", "").replaceAll("```\\n?", "").trim();
 
             JsonNode extracted = objectMapper.readTree(content);
             return mapToExtractionResult(extracted, rawResponse);
 
         } catch (Exception e) {
-            log.error("Failed to parse Claude response: {}", e.getMessage());
+            log.error("Failed to parse Gemini response: {}", e.getMessage());
             throw new ExtractionParseException("Failed to parse AI extraction response", e);
         }
     }
@@ -132,26 +132,26 @@ public class ClaudeExtractionService {
     private String buildExtractionPrompt(String ocrText, String filename) {
         return """
             Extract all procurement quote data from the following document text.
-            
+
             Document filename: %s
-            
+
             Document text:
             ---
             %s
             ---
-            
+
             Return ONLY a JSON object. No markdown, no explanation, just the JSON.
             """.formatted(filename, ocrText);
     }
 
-    // ── System prompt (the core of the product) ────────────────
+    // ── System prompt ─────────────────────────────────────────
 
     private static final String SYSTEM_PROMPT = """
         You are a precision procurement data extraction engine. Your job is to extract
         structured data from supplier quote documents with high accuracy.
-        
+
         Always respond with ONLY valid JSON matching this exact schema:
-        
+
         {
           "supplier_name": "string or null",
           "quote_reference": "string or null",
@@ -185,13 +185,13 @@ public class ClaudeExtractionService {
           "overall_confidence": 0.0-1.0,
           "missing_fields": ["field_name"] or []
         }
-        
+
         Confidence scoring rules:
         - 1.0: Value is clearly present and unambiguous
         - 0.8-0.9: Value extracted with minor uncertainty (formatting, abbreviation)
         - 0.6-0.7: Value inferred or partially visible
         - Below 0.6: Add field to flagged_fields
-        
+
         Critical rules:
         - All monetary values must be numbers (no currency symbols, no commas)
         - Dates must be YYYY-MM-DD format
@@ -200,10 +200,4 @@ public class ClaudeExtractionService {
         - If multiple VAT rates appear, extract at line item level
         - overall_confidence = weighted average of all field confidences
         """;
-}
-
-class ExtractionParseException extends RuntimeException {
-    ExtractionParseException(String message, Throwable cause) {
-        super(message, cause);
-    }
 }
