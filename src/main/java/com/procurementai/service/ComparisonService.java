@@ -15,19 +15,16 @@ import java.util.*;
  * Generates side-by-side comparisons from multiple extracted quotes.
  * This is the core product feature users see in the demo.
  *
- * Also calls Gemini to generate a plain-English summary and recommendation.
+ * Also calls Ollama to generate a plain-English summary and recommendation.
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class ComparisonService {
 
-    // private final WebClient claudeWebClient;  // Commented out — using Gemini
-    private final WebClient geminiWebClient;
+    private final WebClient ollamaWebClient;
 
-    // @Value("${app.claude.model}")
-    // private String model;
-    @Value("${app.gemini.model}")
+    @Value("${app.ollama.model}")
     private String model;
 
     // ── Build a comparison matrix ──────────────────────────────
@@ -42,27 +39,25 @@ public class ComparisonService {
         return new ComparisonMatrix(quotes, matchedGroups, summary);
     }
 
-    // ── Gemini AI summary ──────────────────────────────────────
+    // ── Ollama AI summary ──────────────────────────────────────
 
     public Mono<AiComparisonSummary> generateAiSummary(ComparisonMatrix matrix) {
         String matrixText = formatMatrixForPrompt(matrix);
         String prompt = SUMMARY_SYSTEM_PROMPT + "\n\n" + matrixText;
 
         Map<String, Object> requestBody = Map.of(
-            "contents", List.of(
-                Map.of("parts", List.of(
-                    Map.of("text", prompt)
-                ))
-            ),
-            "generationConfig", Map.of(
+            "model", model,
+            "prompt", prompt,
+            "stream", false,
+            "format", "json",
+            "options", Map.of(
                 "temperature", 0.1,
-                "maxOutputTokens", 1000,
-                "responseMimeType", "application/json"
+                "num_predict", 1000
             )
         );
 
-        return geminiWebClient.post()
-            .uri("/v1beta/models/{model}:generateContent", model)
+        return ollamaWebClient.post()
+            .uri("/api/generate")
             .bodyValue(requestBody)
             .retrieve()
             .bodyToMono(String.class)
@@ -158,7 +153,7 @@ public class ComparisonService {
         );
     }
 
-    // ── Format for Gemini prompt ───────────────────────────────
+    // ── Format for Ollama prompt ───────────────────────────────
 
     private String formatMatrixForPrompt(ComparisonMatrix matrix) {
         StringBuilder sb = new StringBuilder();
@@ -180,16 +175,14 @@ public class ComparisonService {
     }
 
     private AiComparisonSummary parseAiSummaryResponse(String raw) {
-        // Parse the Gemini response — extract text from candidates[0].content.parts[0].text
+        // Parse the Ollama response — extract text from the "response" field
         try {
             var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             var root = mapper.readTree(raw);
-            String text = root.path("candidates").get(0)
-                .path("content").path("parts").get(0)
-                .path("text").asText();
+            String text = root.path("response").asText();
             return new AiComparisonSummary(text, null);
         } catch (Exception e) {
-            log.warn("Failed to parse Gemini summary response, returning raw: {}", e.getMessage());
+            log.warn("Failed to parse Ollama summary response, returning raw: {}", e.getMessage());
             return new AiComparisonSummary(raw, null);
         }
     }

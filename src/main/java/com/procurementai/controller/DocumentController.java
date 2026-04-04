@@ -11,9 +11,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.io.IOException;
-import java.time.OffsetDateTime;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -32,6 +34,7 @@ public class DocumentController {
     // Demo company/user IDs from V5 seed data — replace with security context once auth is wired
     private static final UUID DEMO_COMPANY_ID = UUID.fromString("a0000000-0000-0000-0000-000000000001");
     private static final UUID DEMO_USER_ID    = UUID.fromString("b0000000-0000-0000-0000-000000000001");
+    private static final String API_BASE_PATH = "/api/v1/documents";
 
     private final DocumentRepository       documentRepository;
     private final CompanyRepository        companyRepository;
@@ -65,7 +68,7 @@ public class DocumentController {
             .supplier(supplier)
             .originalFilename(file.getOriginalFilename())
             .storageKey(uploadResult.storageKey())
-            .contentType(file.getContentType() != null ? file.getContentType() : "application/octet-stream")
+            .contentType(Objects.requireNonNullElse(file.getContentType(), "application/octet-stream"))
             .fileSizeBytes(file.getSize())
             .checksumSha256(uploadResult.checksum())
             .status(DocumentStatus.PROCESSING)
@@ -80,18 +83,22 @@ public class DocumentController {
         extractionJobRepository.save(job);
 
         // 4. Trigger async extraction pipeline (fire-and-forget; persistence handled inside service)
-        final UUID documentId = document.getId();
         documentProcessingService.processDocumentAsync(
-            documentId, uploadResult.storageKey(), file.getOriginalFilename());
+            document.getId(), uploadResult.storageKey(), file.getOriginalFilename());
 
         log.info("Document {} saved, extraction queued", document.getId());
+
+        String documentUrl = ServletUriComponentsBuilder.fromCurrentContextPath()
+            .path(API_BASE_PATH + "/{id}")
+            .buildAndExpand(document.getId())
+            .toUriString();
 
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(new DocumentUploadResponse(
             document.getId(),
             file.getOriginalFilename(),
-            "PROCESSING",
+            DocumentStatus.PROCESSING.name(),
             "Document uploaded successfully. Extraction in progress.",
-            "/api/v1/documents/" + document.getId()
+            documentUrl
         ));
     }
 
@@ -102,25 +109,21 @@ public class DocumentController {
         Document document = documentRepository.findById(documentId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
 
-        ExtractionJob job = extractionJobRepository.findByDocumentId(documentId).orElse(null);
+        Optional<ExtractionJob> jobOpt = extractionJobRepository.findByDocumentId(documentId);
+        Optional<Quote> quoteOpt = Optional.ofNullable(document.getQuote());
 
-        UUID quoteId = document.getQuote() != null ? document.getQuote().getId() : null;
-        String error = job != null ? job.getErrorMessage() : null;
-        String status = job != null ? job.getStatus().name() : document.getStatus().name();
+        UUID quoteId = quoteOpt.map(Quote::getId).orElse(null);
+        String error = jobOpt.map(ExtractionJob::getErrorMessage).orElse(null);
+        String status = jobOpt.map(job -> job.getStatus().name())
+            .orElse(document.getStatus().name());
 
-        String supplierName = null;
-        String quoteReference = null;
-        double confidence = 0.0;
-        boolean requiresReview = false;
-
-        if (document.getQuote() != null) {
-            var quote = document.getQuote();
-            supplierName = quote.getSupplierNameRaw();
-            quoteReference = quote.getQuoteReference();
-            confidence = quote.getExtractionConfidence() != null
-                ? quote.getExtractionConfidence().doubleValue() : 0.0;
-            requiresReview = quote.isRequiresReview();
-        }
+        String supplierName = quoteOpt.map(Quote::getSupplierNameRaw).orElse(null);
+        String quoteReference = quoteOpt.map(Quote::getQuoteReference).orElse(null);
+        double confidence = quoteOpt
+            .flatMap(q -> Optional.ofNullable(q.getExtractionConfidence()))
+            .map(java.math.BigDecimal::doubleValue)
+            .orElse(0.0);
+        boolean requiresReview = quoteOpt.map(Quote::isRequiresReview).orElse(false);
 
         return ResponseEntity.ok(new DocumentStatusResponse(
             documentId, quoteId, document.getOriginalFilename(), status,

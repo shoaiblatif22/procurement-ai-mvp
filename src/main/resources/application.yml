@@ -54,9 +54,13 @@ app:
   #   max-tokens: 2000
   #   timeout-seconds: 60
 
-  gemini:
-    api-key: ${GEMINI_API_KEY:}
-    model: ${GEMINI_MODEL:gemini-2.0-flash}
+  # gemini:                                   # Commented out — using Ollama instead
+  #   api-key: ${GEMINI_API_KEY:}
+  #   model: ${GEMINI_MODEL:gemini-2.0-flash}
+
+  ollama:
+    base-url: ${OLLAMA_BASE_URL:http://host.docker.internal:11434}
+    model: ${OLLAMA_MODEL:qwen2.5:3b}
 
   aws:
     region: ${AWS_REGION:eu-west-2}

@@ -15,18 +15,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Calls the Google Gemini API to extract structured data from raw OCR text.
- * Drop-in replacement for ClaudeExtractionService — same input/output contract.
+ * Calls the Ollama API to extract structured data from raw OCR text.
+ * Drop-in replacement for GeminiExtractionService — same input/output contract.
  */
-// @Service  // Commented out — using Ollama instead
+@Service
 @Slf4j
 @RequiredArgsConstructor
-public class GeminiExtractionService {
+public class OllamaExtractionService {
 
-    private final WebClient geminiWebClient;
+    private final WebClient ollamaWebClient;
     private final ObjectMapper objectMapper;
 
-    @Value("${app.gemini.model}")
+    @Value("${app.ollama.model}")
     private String model;
 
     @Value("${app.extraction.confidence-threshold}")
@@ -38,34 +38,32 @@ public class GeminiExtractionService {
         String prompt = SYSTEM_PROMPT + "\n\n" + buildExtractionPrompt(ocrText, originalFilename);
 
         Map<String, Object> requestBody = Map.of(
-            "contents", List.of(
-                Map.of("parts", List.of(
-                    Map.of("text", prompt)
-                ))
-            ),
-            "generationConfig", Map.of(
+            "model", model,
+            "prompt", prompt,
+            "stream", false,
+            "format", "json",
+            "options", Map.of(
                 "temperature", 0.1,
-                "maxOutputTokens", 4096,
-                "responseMimeType", "application/json"
+                "num_predict", 4096
             )
         );
 
-        log.debug("Sending extraction request to Gemini for document: {}", originalFilename);
+        log.debug("Sending extraction request to Ollama ({}) for document: {}", model, originalFilename);
 
-        return geminiWebClient.post()
-            .uri("/v1beta/models/{model}:generateContent", model)
+        return ollamaWebClient.post()
+            .uri("/api/generate")
             .bodyValue(requestBody)
             .retrieve()
             .onStatus(status -> status.isError(), response ->
                 response.bodyToMono(String.class)
                     .flatMap(body -> {
-                        log.error("Gemini API error {} for {}: {}", response.statusCode(), originalFilename, body);
-                        return Mono.error(new RuntimeException("Gemini API " + response.statusCode() + ": " + body));
+                        log.error("Ollama API error {} for {}: {}", response.statusCode(), originalFilename, body);
+                        return Mono.error(new RuntimeException("Ollama API " + response.statusCode() + ": " + body));
                     })
             )
             .bodyToMono(String.class)
-            .timeout(Duration.ofSeconds(60))
-            .map(this::parseGeminiResponse)
+            .timeout(Duration.ofSeconds(300))
+            .map(this::parseOllamaResponse)
             .doOnSuccess(result -> log.info(
                 "Extraction complete for {}. Confidence: {}, Items: {}, Requires review: {}",
                 originalFilename,
@@ -73,26 +71,24 @@ public class GeminiExtractionService {
                 result.lineItems().size(),
                 result.requiresReview()
             ))
-            .doOnError(e -> log.error("Gemini extraction failed for {}: {}", originalFilename, e.getMessage()));
+            .doOnError(e -> log.error("Ollama extraction failed for {}: {}", originalFilename, e.getMessage()));
     }
 
     // ── Response parsing ───────────────────────────────────────
 
-    private QuoteExtractionResult parseGeminiResponse(String rawResponse) {
+    private QuoteExtractionResult parseOllamaResponse(String rawResponse) {
         try {
             JsonNode root = objectMapper.readTree(rawResponse);
-            String content = root.path("candidates").get(0)
-                .path("content").path("parts").get(0)
-                .path("text").asText();
+            String content = root.path("response").asText();
 
-            // Strip any markdown code fences Gemini might add
+            // Strip any markdown code fences the model might add
             content = content.replaceAll("```json\\n?", "").replaceAll("```\\n?", "").trim();
 
             JsonNode extracted = objectMapper.readTree(content);
             return mapToExtractionResult(extracted, rawResponse);
 
         } catch (Exception e) {
-            log.error("Failed to parse Gemini response: {}", e.getMessage());
+            log.error("Failed to parse Ollama response: {}", e.getMessage());
             throw new ExtractionParseException("Failed to parse AI extraction response", e);
         }
     }
@@ -146,7 +142,7 @@ public class GeminiExtractionService {
 
     // ── System prompt ─────────────────────────────────────────
 
-    private static final String SYSTEM_PROMPT = """
+    static final String SYSTEM_PROMPT = """
         You are a precision procurement data extraction engine. Your job is to extract
         structured data from supplier quote documents with high accuracy.
 

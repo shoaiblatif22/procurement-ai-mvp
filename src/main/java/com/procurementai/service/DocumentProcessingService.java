@@ -1,7 +1,8 @@
 package com.procurementai.service;
 
 // import com.procurementai.integration.ClaudeExtractionService;  // Commented out — using Gemini
-import com.procurementai.integration.GeminiExtractionService;
+// import com.procurementai.integration.GeminiExtractionService;  // Commented out — using Ollama
+import com.procurementai.integration.OllamaExtractionService;
 import com.procurementai.integration.QuoteExtractionResult;
 import com.procurementai.record.DocumentUploadResult;
 
@@ -48,7 +49,8 @@ public class DocumentProcessingService {
     private final S3Client s3Client;
     private final TextractClient textractClient;
     // private final ClaudeExtractionService claudeExtractionService;  // Commented out — using Gemini
-    private final GeminiExtractionService geminiExtractionService;
+    // private final GeminiExtractionService geminiExtractionService;  // Commented out — using Ollama
+    private final OllamaExtractionService ollamaExtractionService;
     private final ExtractionPersistenceService extractionPersistenceService;
 
     private final String s3Bucket;
@@ -156,8 +158,8 @@ public class DocumentProcessingService {
     // ── Full async pipeline ────────────────────────────────────
 
     /**
-     * Run OCR + Gemini extraction async. Caller must supply documentId so results
-     * can be persisted back to the DB once Gemini responds.
+     * Run OCR + Ollama extraction async. Caller must supply documentId so results
+     * can be persisted back to the DB once Ollama responds.
      */
     @Async
     public CompletableFuture<QuoteExtractionResult> processDocumentAsync(
@@ -170,7 +172,7 @@ public class DocumentProcessingService {
         return CompletableFuture
             .supplyAsync(() -> extractTextFromDocument(storageKey))
             .thenCompose(ocrText ->
-                geminiExtractionService
+                ollamaExtractionService
                     .extractQuoteData(ocrText, originalFilename)
                     .toFuture()
             )

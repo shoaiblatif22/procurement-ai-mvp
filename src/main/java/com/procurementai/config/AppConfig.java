@@ -41,24 +41,34 @@ public class AppConfig {
     //         .build();
     // }
 
-    // ── Gemini API WebClient ──────────────────────────────────
+    // ── Gemini API WebClient (commented out — using Ollama instead) ──
+    //
+    // @Bean
+    // public WebClient geminiWebClient(@Value("${app.gemini.api-key}") String apiKey) {
+    //     return WebClient.builder()
+    //         .baseUrl("https://generativelanguage.googleapis.com")
+    //         .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+    //         .defaultUriVariables(Map.of("key", apiKey))
+    //         .codecs(config -> config.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
+    //         .filter((request, next) -> {
+    //             var uri = UriComponentsBuilder
+    //                 .fromUri(request.url())
+    //                 .queryParam("key", apiKey)
+    //                 .build().toUri();
+    //             return next.exchange(ClientRequest
+    //                 .from(request).url(uri).build());
+    //         })
+    //         .build();
+    // }
+
+    // ── Ollama API WebClient ──────────────────────────────────
 
     @Bean
-    public WebClient geminiWebClient(@Value("${app.gemini.api-key}") String apiKey) {
+    public WebClient ollamaWebClient(@Value("${app.ollama.base-url}") String baseUrl) {
         return WebClient.builder()
-            .baseUrl("https://generativelanguage.googleapis.com")
+            .baseUrl(baseUrl)
             .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-            .defaultUriVariables(Map.of("key", apiKey))
             .codecs(config -> config.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
-            .filter((request, next) -> {
-                // Append API key as query parameter to every request
-                var uri = UriComponentsBuilder
-                    .fromUri(request.url())
-                    .queryParam("key", apiKey)
-                    .build().toUri();
-                return next.exchange(ClientRequest
-                    .from(request).url(uri).build());
-            })
             .build();
     }
 
