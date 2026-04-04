@@ -64,9 +64,6 @@ app:
     textract:
       endpoint: ${AWS_TEXTRACT_ENDPOINT:http://localhost:4566}  # LocalStack override
 
-  ocr:
-    use-pdfbox: ${USE_PDFBOX:true}         # true = PDFBox (local dev), false = Textract (prod)
-
   extraction:
     confidence-threshold: 0.90             # Below this: flag for human review
     max-pages: 50

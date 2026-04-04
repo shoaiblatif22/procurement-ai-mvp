@@ -1,7 +1,7 @@
 # Procurement AI — Developer Shortcuts
 # Usage: make <target>
 
-.PHONY: help up down db-only build test clean logs shell-db
+.PHONY: help up down db-only build test clean logs shell-db rebuild
 
 help:
 	@echo ""
@@ -27,6 +27,10 @@ up-local:
 	docker compose --profile local up -d
 	@echo "App running at http://localhost:8080"
 	@echo "LocalStack at http://localhost:4566"
+
+rebuild:
+	docker compose up -d --build app
+	@echo "App image rebuilt and restarted"
 
 down:
 	docker compose down

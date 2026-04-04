@@ -9,7 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
-import org.springframework.beans.factory.annotation.Value;
+
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -51,9 +51,6 @@ public class DocumentProcessingService {
 
     private final String s3Bucket;
 
-    @Value("${app.ocr.use-pdfbox:true}")
-    private boolean usePdfBox;
-
     // ── Upload ─────────────────────────────────────────────────
 
     public DocumentUploadResult uploadDocument(MultipartFile file, UUID companyId, UUID userId)
@@ -91,10 +88,12 @@ public class DocumentProcessingService {
     // ── Text extraction ──────────────────────────────────────
 
     public String extractTextFromDocument(String storageKey) {
-        if (usePdfBox) {
+        try {
             return extractTextWithPdfBox(storageKey);
+        } catch (Exception e) {
+            log.warn("PDFBox failed, falling back to Textract: {}", e.getMessage());
+            return extractTextWithTextract(storageKey);
         }
-        return extractTextWithTextract(storageKey);
     }
 
     private String extractTextWithPdfBox(String storageKey) {

@@ -32,7 +32,7 @@ public class AppConfig {
             .baseUrl(baseUrl)
             .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
             .defaultHeader("x-api-key", apiKey)
-            .defaultHeader("anthropic-version", "2023-06-01")
+            .defaultHeader("anthropic-version", "2025-01-01")
             .codecs(config -> config.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
             .build();
     }
