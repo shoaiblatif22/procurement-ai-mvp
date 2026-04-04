@@ -1,0 +1,29 @@
+# Environment — never commit
+.env
+*.env.local
+
+# Build
+target/
+*.jar
+*.war
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.class
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Docker volumes (local dev)
+postgres_data/
+redis_data/
+
+# Maven wrapper (if not committed intentionally)
+# .mvn/

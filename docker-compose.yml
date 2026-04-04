@@ -1,0 +1,96 @@
+version: '3.9'
+
+services:
+
+  # ── PostgreSQL ────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: procurement_postgres
+    environment:
+      POSTGRES_DB: procurement_ai
+      POSTGRES_USER: ${DB_USER:-procuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-procpass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-procuser} -d procurement_ai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - procurement_net
+
+  # ── Redis (session + cache) ───────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: procurement_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - procurement_net
+
+  # ── Spring Boot App ───────────────────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: procurement_app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      localstack:
+        condition: service_started
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/procurement_ai
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-procuser}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-procpass}
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      # Claude API — set in .env
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY}
+      CLAUDE_MODEL: claude-sonnet-4-6
+      # AWS — set in .env (or use LocalStack below for local dev)
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-test}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-test}
+      AWS_REGION: ${AWS_REGION:-eu-west-2}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-procurement-docs}
+      AWS_S3_ENDPOINT: http://localstack:4566
+      AWS_TEXTRACT_ENDPOINT: http://localstack:4566
+      # App
+      APP_JWT_SECRET: ${JWT_SECRET:-change-me-in-production-min-256-bits}
+      APP_JWT_EXPIRY_MS: 86400000
+    ports:
+      - "8081:8080"
+    networks:
+      - procurement_net
+
+  # ── LocalStack (AWS emulation for local dev) ──────────────────
+  localstack:
+    image: localstack/localstack:3.2
+    container_name: procurement_localstack
+    ports:
+      - "4566:4566"
+    environment:
+      SERVICES: s3,textract
+      DEFAULT_REGION: eu-west-2
+      AWS_DEFAULT_REGION: eu-west-2
+    volumes:
+      - localstack_data:/var/lib/localstack
+      - ./localstack-init:/etc/localstack/init/ready.d
+    networks:
+      - procurement_net
+
+volumes:
+  postgres_data:
+  redis_data:
+  localstack_data:
+
+networks:
+  procurement_net:
+    driver: bridge
