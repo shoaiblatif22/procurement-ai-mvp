@@ -52,13 +52,6 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-procpass}
       SPRING_REDIS_HOST: redis
       SPRING_REDIS_PORT: 6379
-      # Claude API — commented out, using Gemini instead
-      # CLAUDE_API_KEY: ${CLAUDE_API_KEY}
-      # CLAUDE_MODEL: claude-sonnet-4-6
-      # Gemini API — commented out, using Ollama instead
-      # GEMINI_API_KEY: ${GEMINI_API_KEY}
-      # GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash-lite}
-      # Ollama
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://192.168.7.21:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3:latest}
       # AWS — set in .env (or use LocalStack below for local dev)

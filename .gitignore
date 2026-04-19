@@ -24,6 +24,7 @@ logs/
 # Docker volumes (local dev)
 postgres_data/
 redis_data/
+docker-compose.yml
 
 # Maven wrapper (if not committed intentionally)
 # .mvn/
